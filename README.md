@@ -1,13 +1,15 @@
 # waitgroup
 
-extend std waitgroup faeture
+`extend std waitgroup`
+
+**feature:**
 
 - easy api
 - add timeout
 - add context
 - concurrency go func
 
-`when waitgroup force to exit with timeout, may cause goroutines leak problems.`
+`when waitgroup force to exit with timeout, may cause goroutines leak problem.`
 
 ## usage:
 
