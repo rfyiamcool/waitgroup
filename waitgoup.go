@@ -10,6 +10,11 @@ import (
 
 // some code refer golang.org/x/sync/errgroup
 
+var (
+	waitgroupCounter int32
+	goroutineCounter int32
+)
+
 type WaitGroup struct {
 	cancel func()
 	waiter int32
@@ -68,6 +73,7 @@ func (g *WaitGroup) WaitTimeout(d time.Duration) {
 	}
 }
 
+// Wait wait block until all goroutine exit
 func (g *WaitGroup) Wait() []error {
 	g.wg.Wait()
 	g.close()
@@ -103,17 +109,23 @@ func (g *WaitGroup) AsyncMany(fn func() error, count int) {
 }
 
 func (g *WaitGroup) incr() int32 {
+	atomic.AddInt32(&goroutineCounter, 1)
 	n := atomic.AddInt32(&g.waiter, 1)
-	if n == 0 {
+	if n == 0 { // exception ?
 		g.cancel()
+	}
+	if n == 1 { // first add
+		atomic.AddInt32(&waitgroupCounter, 1)
 	}
 	return n
 }
 
 func (g *WaitGroup) decr() int32 {
+	atomic.AddInt32(&goroutineCounter, -1)
 	n := atomic.AddInt32(&g.waiter, -1)
 	if n == 0 {
 		g.close()
+		atomic.AddInt32(&waitgroupCounter, -1)
 	}
 	return n
 }
@@ -123,8 +135,10 @@ func (g *WaitGroup) run(fn func() error) {
 	g.incr()
 
 	go func() {
-		defer g.wg.Done()
-		g.decr()
+		defer func() {
+			g.decr()
+			g.wg.Done()
+		}()
 
 		if err := fn(); err != nil {
 			g.Lock()
@@ -167,4 +181,28 @@ func ConvertQueue(l interface{}) chan interface{} {
 	}
 	close(c)
 	return c
+}
+
+func incrWaitgroups() int32 {
+	return atomic.AddInt32(&waitgroupCounter, 1)
+}
+
+func decrWaitgroups() int32 {
+	return atomic.AddInt32(&waitgroupCounter, -1)
+}
+
+func GetRunningWaitgroups() int32 {
+	return atomic.LoadInt32(&waitgroupCounter)
+}
+
+func incrGoroutines() int32 {
+	return atomic.AddInt32(&goroutineCounter, 1)
+}
+
+func decrGoroutines() int32 {
+	return atomic.AddInt32(&goroutineCounter, -1)
+}
+
+func GetRunningGoroutines() int32 {
+	return atomic.LoadInt32(&goroutineCounter)
 }

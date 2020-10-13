@@ -11,6 +11,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func Test_MultiForLeak(t *testing.T) {
+	Test_Simple(t)
+	Test_WaitTimeout(t)
+	Test_Ctx(t)
+	Test_FastFail(t)
+
+	assert.Equal(t, int(GetRunningGoroutines()), 0)
+	assert.Equal(t, int(GetRunningWaitgroups()), 0)
+}
+
 func Test_Simple(t *testing.T) {
 	counter := 0
 	lock := sync.Mutex{}
@@ -18,6 +28,7 @@ func Test_Simple(t *testing.T) {
 		lock.Lock()
 		defer lock.Unlock()
 
+		time.Sleep(1e6)
 		counter++
 		return nil
 	}
@@ -26,11 +37,17 @@ func Test_Simple(t *testing.T) {
 	wg.Async(fn)
 	wg.AsyncMany(fn, 5)
 
+	assert.Equal(t, int(GetRunningGoroutines()), 6)
+	assert.Equal(t, int(GetRunningWaitgroups()), 1)
+
 	<-ctx.Done()
 	wg.Wait()
 
 	assert.Equal(t, wg.IsError(), false)
 	assert.Equal(t, counter, 6)
+
+	assert.Equal(t, int(GetRunningGoroutines()), 0)
+	assert.Equal(t, int(GetRunningWaitgroups()), 0)
 }
 
 func Test_Ctx(t *testing.T) {
@@ -79,13 +96,26 @@ func Test_WaitTimeout(t *testing.T) {
 
 	wg.Async(
 		func() error {
-			time.Sleep(5 * time.Second)
+			time.Sleep(3 * time.Second)
 			return io.ErrClosedPipe
 		},
 	)
+	assert.Greater(t, int(GetRunningGoroutines()), 0)
+	assert.Greater(t, int(GetRunningWaitgroups()), 0)
 
+	// force to exit with timeout
 	wg.WaitTimeout(1 * time.Second)
-	<-cctx.Done()
+	select {
+	case <-cctx.Done():
+	}
+
+	assert.Equal(t, int(GetRunningGoroutines()), 1)
+	assert.Equal(t, int(GetRunningWaitgroups()), 1)
+
+	// wait all g exit
+	wg.Wait()
+	assert.Equal(t, int(GetRunningGoroutines()), 0)
+	assert.Equal(t, int(GetRunningWaitgroups()), 0)
 }
 
 func Test_AsyncManyFunc(t *testing.T) {
@@ -119,7 +149,7 @@ func Test_FastFail(t *testing.T) {
 	start := time.Now()
 	wg.Async(
 		func() error {
-			time.Sleep(10 * time.Second)
+			time.Sleep(2 * time.Second)
 			return nil
 		},
 	)
@@ -133,4 +163,12 @@ func Test_FastFail(t *testing.T) {
 
 	<-cctx.Done()
 	assert.LessOrEqual(t, time.Since(start).Seconds(), float64(2))
+
+	assert.Equal(t, int(GetRunningGoroutines()), 1)
+	assert.Equal(t, int(GetRunningWaitgroups()), 1)
+
+	time.Sleep(2 * time.Second)
+
+	assert.Equal(t, int(GetRunningGoroutines()), 0)
+	assert.Equal(t, int(GetRunningWaitgroups()), 0)
 }

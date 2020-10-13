@@ -7,6 +7,8 @@ extend std waitgroup faeture
 - add context
 - concurrency go func
 
+`when waitgroup force to exit with timeout, may cause goroutines leak problems.`
+
 ## usage:
 
 see more example in test
